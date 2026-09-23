@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generative Matrix Synthesizer - System II</title>
+    <style>
+        :root {
+            --bg-color: #0a0a0c;
+            --panel-bg: #15161a;
+            --panel-border: #2c2e36;
+            --text-color: #d0d0d0;
+            --accent-color: #5c7c8c;
+            --jack-ring: #d9d9d9;
+            --jack-hole: #050505;
+            --knob-base: #111;
+            --knob-border: #333;
+            --knob-indicator: #e74c3c;
+            --jack-shadow: 0 4px 6px rgba(0,0,0,0.5);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at 50% 0%, #1a1c23 0%, #0a0a0c 80%);
+            color: var(--text-color);
+            font-family: 'SF Mono', 'Courier New', Courier, monospace;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        #synth-container {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 15px;
+            padding: 30px;
+            height: calc(100vh - 60px);
+            box-sizing: border-box;
+            z-index: 10;
+            position: relative;
+        }
+
+        .module {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-top: 4px solid var(--accent-color);
+            border-radius: 6px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.5), 8px 8px 20px rgba(0,0,0,0.4);
+            position: relative;
+            z-index: 20;
+        }
+
+        .module-header {
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            letter-spacing: 1.5px;
+            color: #8892a0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px 10px;
+            flex-grow: 1;
+            align-content: start;
+        }
+
+        .controls-grid.three-col {
+            grid-template-columns: 1fr 1fr 1fr;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .control-label {
+            font-size: 0.65rem;
+            margin-top: 6px;
+            text-align: center;
+            color: #6a6a75;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Knobs */
+        .knob {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, #222, #000);
+            border-radius: 50%;
+            border: 2px solid var(--knob-border);
+            box-shadow: inset 0px 2px 2px rgba(255,255,255,0.1), 0 5px 10px rgba(0,0,0,0.6);
+            position: relative;
+            cursor: ns-resize;
+            transform: rotate(-135deg);
+            touch-action: none; /* FIX #12: touch support */
+        }
+
+        .knob::after {
+            content: '';
+            position: absolute;
+            top: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 12px;
+            background-color: var(--knob-indicator);
+            border-radius: 2px;
+            box-shadow: 0 0 5px var(--knob-indicator);
+        }
+
+        /* Switches */
+        .switch {
+            width: 30px;
+            height: 16px;
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 8px;
+            position: relative;
+            cursor: pointer;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.8);
+            margin-top: 10px;
+        }
+        .switch::after {
+            content: '';
+            position: absolute;
+            top: 1px;
+            left: 1px;
+            width: 12px;
+            height: 12px;
+            background: #666;
+            border-radius: 50%;
+            transition: left 0.2s;
+        }
+        .switch.on::after {
+            left: 15px;
+            background: #2ecc71;
+            box-shadow: 0 0 5px #2ecc71;
+        }
+
+        /* Jacks */
+        .jack-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed rgba(255,255,255,0.05);
+        }
+
+        .jack {
+            width: 28px;
+            height: 28px;
+            background: linear-gradient(135deg, #e0e0e0, #888);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: crosshair;
+            box-shadow: var(--jack-shadow);
+            border: 1px solid #444;
+            transition: all 0.2s;
+            position: relative;
+            z-index: 30;
+            touch-action: none; /* FIX #12: touch support */
+        }
+
+        .jack::before {
+            content: '';
+            width: 12px;
+            height: 12px;
+            background-color: var(--jack-hole);
+            border-radius: 50%;
+            box-shadow: inset 0 2px 6px rgba(0,0,0,0.9);
+        }
+
+        .jack:hover { filter: brightness(1.3); }
+
+        body.patching .jack {
+            border-color: #2ecc71;
+            box-shadow: 0 0 12px rgba(46, 204, 113, 0.4);
+        }
+        body.patching .jack.patch-source {
+            border-color: #f1c40f;
+            box-shadow: 0 0 15px rgba(241, 196, 15, 0.8);
+        }
+
+        /* SVG Cable Layer */
+        #cable-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .cable-group { pointer-events: none; }
+        .cable-visual {
+            fill: none;
+            stroke-width: 5px;
+            stroke-linecap: round;
+            filter: drop-shadow(4px 6px 4px rgba(0,0,0,0.5));
+            pointer-events: none;
+        }
+        .cable-hitbox {
+            fill: none;
+            stroke: transparent;
+            stroke-width: 24px;
+            stroke-linecap: round;
+            pointer-events: stroke;
+            cursor: pointer;
+        }
+
+        body.delete-mode .cable-hitbox:hover + .cable-visual,
+        body.delete-mode .cable-hitbox:hover ~ .cable-visual {
+            stroke: #ff4757 !important;
+            stroke-width: 7px;
+            filter: drop-shadow(0 0 10px rgba(255,71,87,0.8));
+        }
+        body.delete-mode .cable-hitbox { cursor: not-allowed; }
+
+        /* UI Overlays */
+        #overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(8, 8, 10, 0.95);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        button.start-btn {
+            background: transparent;
+            color: #2ecc71;
+            border: 1px solid #2ecc71;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-family: inherit;
+            cursor: pointer;
+            border-radius: 3px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.3s;
+        }
+
+        button.start-btn:hover {
+            background: rgba(46, 204, 113, 0.1);
+            box-shadow: 0 0 15px rgba(46, 204, 113, 0.4);
+        }
+
+        .status-bar {
+            position: fixed;
+            bottom: 5px;
+            left: 20px;
+            font-size: 0.7rem;
+            color: #4a4a55;
+            z-index: 50;
+            letter-spacing: 1px;
+        }
+
+        .midi-led {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #333;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .midi-led.active { background: #2ecc71; box-shadow: 0 0 8px #2ecc71; }
+
+        /* Colored Jack Rings */
+        .jack[data-color="red"]    { background: linear-gradient(135deg, #ff6b6b, #c0392b); }
+        .jack[data-color="yellow"] { background: linear-gradient(135deg, #feca57, #f39c12); }
+        .jack[data-color="blue"]   { background: linear-gradient(135deg, #48dbfb, #2980b9); }
+        .jack[data-color="green"]  { background: linear-gradient(135deg, #1dd1a1, #27ae60); }
+        .jack[data-color="purple"] { background: linear-gradient(135deg, #cd84f1, #8e44ad); }
+    </style>
+</head>
+<body>
+
+    <div id="overlay">
+        <h1 style="color: #eee; margin-bottom: 5px; letter-spacing: 3px; font-weight: 300;">PALACE OF LIGHTS</h1>
+        <h3 style="color: #666; margin-top: 0; margin-bottom: 30px; letter-spacing: 1px;">SYSTEM II : GENERATIVE ARCHITECTURE</h3>
+        <div style="color: #888; margin-bottom: 40px; text-align: left; max-width: 600px; font-size: 0.85rem; line-height: 1.6;">
+            <p>> <b>Ambient Osc:</b> Continuous Wave Morph (Sine to Triangle) + Sub Sine.</p>
+            <p>> <b>SEM Filter:</b> True State-Variable morphing (LP -> Notch -> HP) with equal-power crossfade.</p>
+            <p>> <b>Routing:</b> Output to Input patching via drag-and-drop (touch supported). Gates route via internal JS logic to bypass Web Audio cyclic limits.</p>
+            <p>> <b>Output:</b> Soft compressor (4:1, −18 dBFS) + brick-wall limiter (20:1, −3 dBFS) on master bus.</p>
+            <p>> <b>Deletion:</b> Hold <b>SHIFT</b> and click a cable to sever connection.</p>
+            <p>> <b>Clock:</b> Turing Machine (Random) or MIDI Input.</p>
+        </div>
+        <button class="start-btn" id="start-engine">Initialize DSP</button>
+    </div>
+
+    <div id="synth-container">
+
+        <!-- MODULE 1: Advanced Arpeggiator & Logic -->
+        <div class="module" id="mod-arp">
+            <div class="module-header">
+                <span>Seq / Turing</span>
+                <div id="midi-status" title="MIDI Status"><span class="midi-led"></span></div>
+            </div>
+            <div class="controls-grid">
+                <div class="control-group">
+                    <div class="knob" data-param="arp_rate" data-min="0.1" data-max="12" data-val="1.5"></div>
+                    <div class="control-label">Rate</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="arp_gate_len" data-min="0.1" data-max="0.95" data-val="0.7"></div>
+                    <div class="control-label">Gate Length</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="arp_chaos" data-min="0" data-max="1" data-val="0.8"></div>
+                    <div class="control-label">Turing Chaos</div>
+                </div>
+                <div class="control-group">
+                    <div class="switch" data-param="arp_mode" data-state="true"></div>
+                    <div class="control-label">Generative Mode</div>
+                </div>
+            </div>
+            <div class="controls-grid" style="margin-top: auto;">
+                <div class="jack-container">
+                    <div class="jack" data-id="arp_cv_out" data-type="cv" data-color="yellow"></div>
+                    <div class="control-label">1V/Oct Out</div>
+                </div>
+                <div class="jack-container">
+                    <div class="jack" data-id="arp_gate_out" data-type="gate" data-color="red"></div>
+                    <div class="control-label">Gate Out</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODULE 2: Micromoog-Inspired Oscillator -->
+        <div class="module" id="mod-osc">
+            <div class="module-header">Ambient Osc</div>
+            <div class="controls-grid three-col">
+                <div class="control-group">
+                    <div class="knob" data-param="osc_tune" data-min="20" data-max="2000" data-val="65.41" data-log="true"></div>
+                    <div class="control-label">Frequency</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="osc_shape" data-min="0" data-max="1" data-val="0"></div>
+                    <div class="control-label">Sine > Tri</div>
+                </div>
+                <div class="control-group">
+                    <!-- FIX #2: osc_pw now controls detune between osc voices for chorus/beating -->
+                    <div class="knob" data-param="osc_pw" data-min="-24" data-max="24" data-val="0"></div>
+                    <div class="control-label">Detune</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="osc_sub" data-min="0" data-max="1" data-val="0.8"></div>
+                    <div class="control-label">Sub Level</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="osc_noise" data-min="0" data-max="1" data-val="0.05"></div>
+                    <div class="control-label">Dust</div>
+                </div>
+                <div class="control-group"></div>
+            </div>
+            <div class="controls-grid three-col" style="margin-top: auto;">
+                <div class="jack-container">
+                    <div class="jack" data-id="osc_cv_in" data-type="cv" data-color="default"></div>
+                    <div class="control-label">V/Oct In</div>
+                </div>
+                <div class="jack-container">
+                    <div class="jack" data-id="osc_pwm_in" data-type="cv" data-color="default"></div>
+                    <div class="control-label">PWM In</div>
+                </div>
+                <div class="jack-container">
+                    <div class="jack" data-id="osc_audio_out" data-type="audio" data-color="blue"></div>
+                    <div class="control-label">Mix Out</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODULE 3: SEM Filter & Envelope -->
+        <div class="module" id="mod-filter">
+            <div class="module-header">SEM Filter & Env</div>
+            <div class="controls-grid three-col">
+                <div class="control-group">
+                    <div class="knob" data-param="filter_cutoff" data-min="20" data-max="12000" data-val="400" data-log="true"></div>
+                    <div class="control-label">Cutoff</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="filter_res" data-min="0.1" data-max="15" data-val="0.5"></div>
+                    <div class="control-label">Resonance</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="filter_morph" data-min="0" data-max="1" data-val="0.2"></div>
+                    <div class="control-label">LP > N > HP</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="env_a" data-min="0.01" data-max="5" data-val="1.5"></div>
+                    <div class="control-label">Attack</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="env_d" data-min="0.05" data-max="8" data-val="3.5"></div>
+                    <div class="control-label">Decay/Rel</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="env_s" data-min="0" data-max="1" data-val="0.6"></div>
+                    <div class="control-label">Sustain</div>
+                </div>
+            </div>
+            <div class="controls-grid three-col" style="margin-top: auto;">
+                <div class="jack-container">
+                    <div class="jack" data-id="filter_audio_in" data-type="audio" data-color="default"></div>
+                    <div class="control-label">Audio In</div>
+                </div>
+                <div class="jack-container">
+                    <div class="jack" data-id="env_gate_in" data-type="gate" data-color="default"></div>
+                    <div class="control-label">Env Gate</div>
+                </div>
+                <div class="jack-container">
+                    <div class="jack" data-id="filter_audio_out" data-type="audio" data-color="green"></div>
+                    <div class="control-label">SVF Out</div>
+                </div>
+                <div class="jack-container">
+                    <div class="jack" data-id="filter_cv_in" data-type="cv" data-color="default"></div>
+                    <div class="control-label">Cutoff CV</div>
+                </div>
+                <div class="jack-container"></div>
+                <div class="jack-container">
+                    <div class="jack" data-id="env_cv_out" data-type="cv" data-color="purple"></div>
+                    <div class="control-label">Env CV Out</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODULE 4: VCA & LFO -->
+        <div class="module" id="mod-vca">
+            <div class="module-header">VCA & Mod</div>
+            <div class="controls-grid">
+                <div class="control-group">
+                    <div class="knob" data-param="vca_bias" data-min="0" data-max="1" data-val="0"></div>
+                    <div class="control-label">Initial Gain</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="lfo_rate" data-min="0.05" data-max="10" data-val="0.15"></div>
+                    <div class="control-label">LFO Rate</div>
+                </div>
+            </div>
+            <div class="controls-grid" style="margin-top: auto;">
+                <div class="jack-container">
+                    <div class="jack" data-id="vca_audio_in" data-type="audio" data-color="default"></div>
+                    <div class="control-label">VCA In</div>
+                </div>
+                <div class="jack-container">
+                    <div class="jack" data-id="vca_cv_in" data-type="cv" data-color="default"></div>
+                    <div class="control-label">VCA CV</div>
+                </div>
+                <div class="jack-container">
+                    <div class="jack" data-id="vca_audio_out" data-type="audio" data-color="blue"></div>
+                    <div class="control-label">VCA Out</div>
+                </div>
+                <div class="jack-container">
+                    <div class="jack" data-id="lfo_cv_out" data-type="cv" data-color="yellow"></div>
+                    <div class="control-label">LFO Out</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODULE 5: Tape Echo / Main Out -->
+        <div class="module" id="mod-fx">
+            <div class="module-header">Tape Echo / Out</div>
+            <div class="controls-grid">
+                <div class="control-group">
+                    <div class="knob" data-param="fx_time" data-min="0.05" data-max="2" data-val="0.8"></div>
+                    <div class="control-label">Time</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="fx_feedback" data-min="0" data-max="0.95" data-val="0.75"></div>
+                    <div class="control-label">Feedback</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="fx_mix" data-min="0" data-max="1" data-val="0.6"></div>
+                    <div class="control-label">Dry/Wet</div>
+                </div>
+                <div class="control-group">
+                    <div class="knob" data-param="master_level" data-min="0" data-max="1" data-val="0.8"></div>
+                    <div class="control-label">Master Vol</div>
+                </div>
+            </div>
+            <div class="controls-grid" style="margin-top: auto;">
+                <div class="jack-container">
+                    <div class="jack" data-id="fx_audio_in" data-type="audio" data-color="default"></div>
+                    <div class="control-label">Echo In</div>
+                </div>
+                <div class="jack-container">
+                    <div class="jack" data-id="master_out" data-type="audio" data-color="red" style="border-radius: 4px;"></div>
+                    <div class="control-label" style="color: #ccc">Speakers</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="status-bar">K LEIMER | DSP SYSTEM ON LINE</div>
+
+    <svg id="cable-layer" xmlns="http://www.w3.org/2000/svg"></svg>
+
+    <script>
+        // ─────────────────────────────────────────────────────────────────────
+        // System Configuration & State
+        // ─────────────────────────────────────────────────────────────────────
+        const COLORS = {
+            red: '#e74c3c', blue: '#3498db', yellow: '#f1c40f',
+            green: '#2ecc71', purple: '#9b59b6', default: '#7f8c8d'
+        };
+
+        let audioCtx;
+        let isEngineRunning = false;
+
+        // FIX #6: Store scheduler timer handle so it can be cancelled
+        let schedulerTimer = null;
+
+        const Nodes = {};
+        const GateRoutes = [];
+        let cables = [];
+
+        let activeNotes = [];
+        let arpStep = 0;
+        let nextNoteTime = 0;
+        const generativeScale = [65.41, 73.42, 82.41, 98.00, 110.00, 130.81, 146.83, 164.81];
+        let currentGenerativeNote = 65.41;
+
+        const Params = {
+            arp_rate: 1.5, arp_gate_len: 0.7, arp_chaos: 0.8, arp_mode: true,
+            osc_tune: 65.41, osc_shape: 0, osc_pw: 0, osc_sub: 0.8, osc_noise: 0.05,
+            filter_cutoff: 400, filter_res: 0.5, filter_morph: 0.2,
+            env_a: 1.5, env_d: 3.5, env_s: 0.6,
+            vca_bias: 0.0, lfo_rate: 0.15,
+            fx_time: 0.8, fx_feedback: 0.75, fx_mix: 0.6, master_level: 0.8
+        };
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Audio Engine Initialization
+        // ─────────────────────────────────────────────────────────────────────
+        function initAudio() {
+            // FIX #10: Remove obsolete webkitAudioContext fallback
+            audioCtx = new AudioContext();
+
+            // ── 1. Generative Arp / Master Clock ──────────────────────────────
+            // FIX #1: arp_cv_out drives oscillator frequencies directly.
+            // Oscillator base frequencies are set to 0 so CV is the sole source;
+            // this prevents the AudioParam addition bug where base value + CV signal
+            // would double the frequency.
+            Nodes.arp_cv_out = audioCtx.createConstantSource();
+            Nodes.arp_cv_out.offset.value = Params.osc_tune;
+            Nodes.arp_cv_out.start();
+
+            Nodes.arp_gate_out = audioCtx.createConstantSource();
+            Nodes.arp_gate_out.start();
+
+            // ── 2. Micromoog Oscillator ───────────────────────────────────────
+            Nodes.osc_cv_in = audioCtx.createGain();
+            Nodes.osc_cv_in.gain.value = 1;
+
+            Nodes.osc_pwm_in = audioCtx.createGain();
+            Nodes.osc_pwm_in.gain.value = 0.5;
+
+            const sawOsc = audioCtx.createOscillator();
+            sawOsc.type = 'triangle';
+            // FIX #1: Base frequency = 0; all pitch comes from arp_cv_out via osc_cv_in
+            sawOsc.frequency.value = 0;
+            sawOsc.start();
+
+            const pulseOsc = audioCtx.createOscillator();
+            pulseOsc.type = 'sine';
+            // FIX #1: Same zero-base approach for pulse oscillator
+            pulseOsc.frequency.value = 0;
+            pulseOsc.start();
+
+            const subOsc = audioCtx.createOscillator();
+            subOsc.type = 'sine';
+            // FIX #1: Sub also starts at 0; sub CV gain halves the Hz value for -1 octave
+            subOsc.frequency.value = 0;
+            subOsc.start();
+
+            // Noise (filtered to brown/tape dust)
+            // Buffer is 10 seconds so the loop point is infrequent (every 10s
+            // rather than every 2s). The loop boundary is also crossfaded: both
+            // ends are faded to 0 over 50ms so the wrap is always 0→0, silent.
+            // Without this, the random non-zero sample at the end of the buffer
+            // jumps to the different random value at the start — a broadband
+            // click that passes the 400Hz LPF and then echoes through the delay.
+            const bufferSize = Math.floor(audioCtx.sampleRate * 10);
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+            const fadeLen = Math.floor(audioCtx.sampleRate * 0.05); // 50ms crossfade
+            for (let i = 0; i < fadeLen; i++) {
+                const t = i / fadeLen;
+                output[i] *= t;                    // fade in: 0→full at start
+                output[bufferSize - 1 - i] *= t;   // fade out: full→0 at end
+            }
+            const noiseSource = audioCtx.createBufferSource();
+            noiseSource.buffer = noiseBuffer;
+            noiseSource.loop = true;
+            noiseSource.start();
+
+            const brownFilter = audioCtx.createBiquadFilter();
+            brownFilter.type = 'lowpass';
+            brownFilter.frequency.value = 400;
+            noiseSource.connect(brownFilter);
+
+            // Wave morph mixers
+            const sawGain   = audioCtx.createGain();
+            const pulseGain = audioCtx.createGain();
+            const subGain   = audioCtx.createGain();
+            const noiseGain = audioCtx.createGain();
+
+            sawOsc.connect(sawGain);
+            pulseOsc.connect(pulseGain);
+            subOsc.connect(subGain);
+            brownFilter.connect(noiseGain);
+
+            Nodes.osc_audio_out = audioCtx.createGain();
+            sawGain.connect(Nodes.osc_audio_out);
+            pulseGain.connect(Nodes.osc_audio_out);
+            subGain.connect(Nodes.osc_audio_out);
+            noiseGain.connect(Nodes.osc_audio_out);
+
+            // FIX #1: Connect CV to oscillator frequency AudioParams.
+            // Because base frequency is 0, the incoming CV value IS the frequency —
+            // no addition problem.
+            Nodes.osc_cv_in.connect(sawOsc.frequency);
+            Nodes.osc_cv_in.connect(pulseOsc.frequency);
+            const subCvGain = audioCtx.createGain();
+            subCvGain.gain.value = 0.5; // Sub tracks at half Hz = -1 octave
+            Nodes.osc_cv_in.connect(subCvGain);
+            subCvGain.connect(subOsc.frequency);
+
+            Nodes._int_saw      = sawOsc;
+            Nodes._int_pulse    = pulseOsc;
+            Nodes._int_sub      = subOsc;
+            Nodes._int_sawGain  = sawGain;
+            Nodes._int_pulseGain = pulseGain;
+            Nodes._int_subGain  = subGain;
+            Nodes._int_noiseGain = noiseGain;
+
+            // Apply initial shape and initial pitch via arp_cv_out
+            updateOscShape(Params.osc_shape);
+            Nodes.arp_cv_out.offset.value = Params.osc_tune;
+
+            // ── 3. SEM Filter ─────────────────────────────────────────────────
+            Nodes.filter_audio_in = audioCtx.createGain();
+            Nodes.filter_cv_in    = audioCtx.createGain();
+            // Depth of LFO→cutoff modulation. 4000 allowed the cutoff to swing
+            // up to ~3600Hz below zero at the default 400Hz base. A BiquadFilter
+            // with a negative frequency parameter hits an implementation-defined
+            // edge case: Chrome clamps to 0Hz (filter fully closed), and the
+            // transition from clamped-at-0 back to positive values as the LFO
+            // rises produces a sharp coefficient snap = click. 800 keeps sweeps
+            // dramatic (±800Hz) while staying safely above 0 when cutoff is at
+            // the default 400Hz and above.
+            Nodes.filter_cv_in.gain.value = 800;
+
+            const filterLP = audioCtx.createBiquadFilter();
+            filterLP.type = 'lowpass';
+            const filterHP = audioCtx.createBiquadFilter();
+            filterHP.type = 'highpass';
+
+            Nodes.filter_audio_in.connect(filterLP);
+            Nodes.filter_audio_in.connect(filterHP);
+            Nodes.filter_cv_in.connect(filterLP.frequency);
+            Nodes.filter_cv_in.connect(filterHP.frequency);
+
+            const lpGain = audioCtx.createGain();
+            const hpGain = audioCtx.createGain();
+            filterLP.connect(lpGain);
+            filterHP.connect(hpGain);
+
+            Nodes.filter_audio_out = audioCtx.createGain();
+            lpGain.connect(Nodes.filter_audio_out);
+            hpGain.connect(Nodes.filter_audio_out);
+
+            Nodes._int_flp     = filterLP;
+            Nodes._int_fhp     = filterHP;
+            Nodes._int_flpGain = lpGain;
+            Nodes._int_fhpGain = hpGain;
+
+            // FIX #14: Use true equal-power (cosine) crossfade
+            updateFilterMorph(Params.filter_morph);
+
+            // ── 4. Envelope Generator ─────────────────────────────────────────
+            Nodes.env_cv_out = audioCtx.createConstantSource();
+            Nodes.env_cv_out.offset.value = 0;
+            Nodes.env_cv_out.start();
+            Nodes.env_gate_in = audioCtx.createGain();
+
+            // ── 5. VCA & LFO ──────────────────────────────────────────────────
+            Nodes.vca_audio_in  = audioCtx.createGain();
+            Nodes.vca_cv_in     = audioCtx.createGain();
+            Nodes.vca_audio_out = audioCtx.createGain();
+
+            const vcaCore = audioCtx.createGain();
+            vcaCore.gain.value = Params.vca_bias;
+
+            Nodes.vca_audio_in.connect(vcaCore);
+            Nodes.vca_cv_in.connect(vcaCore.gain);
+            vcaCore.connect(Nodes.vca_audio_out);
+
+            const lfo = audioCtx.createOscillator();
+            lfo.frequency.value = Params.lfo_rate;
+            lfo.start();
+            Nodes.lfo_cv_out = audioCtx.createGain();
+            lfo.connect(Nodes.lfo_cv_out);
+
+            Nodes._int_vcaCore = vcaCore;
+            Nodes._int_lfo     = lfo;
+
+            // ── 6. Tape Delay & Master ────────────────────────────────────────
+            Nodes.fx_audio_in = audioCtx.createGain();
+            Nodes.master_out  = audioCtx.createGain();
+            Nodes.master_out.gain.value = Params.master_level;
+
+            const delayNode    = audioCtx.createDelay(4.0);
+            const feedbackGain = audioCtx.createGain();
+            const tapeFilter   = audioCtx.createBiquadFilter();
+            tapeFilter.type = 'lowpass';
+            tapeFilter.frequency.value = 1200;
+
+            const dryGain = audioCtx.createGain();
+            const wetGain = audioCtx.createGain();
+
+            Nodes.fx_audio_in.connect(dryGain);
+            Nodes.fx_audio_in.connect(delayNode);
+
+            delayNode.connect(tapeFilter);
+            tapeFilter.connect(feedbackGain);
+            feedbackGain.connect(delayNode);
+            tapeFilter.connect(wetGain);
+
+            dryGain.connect(Nodes.master_out);
+            wetGain.connect(Nodes.master_out);
+
+            // ── Soft Compressor ───────────────────────────────────────────────
+            // Sits after master volume. Tames the dynamic range of the tape echo
+            // build-up and multi-oscillator summing without obviously squashing the
+            // sound. 4:1 ratio with a soft knee keeps the compression musical.
+            const compressor = audioCtx.createDynamicsCompressor();
+            compressor.threshold.value = -18; // Start compressing at -18 dBFS
+            compressor.knee.value      = 8;   // Soft knee — gradual onset
+            compressor.ratio.value     = 4;   // 4:1: musical, not destructive
+            compressor.attack.value    = 0.005; // 5ms — lets initial transients through
+            compressor.release.value   = 0.15;  // 150ms — fast enough to breathe
+
+            // ── Hard Limiter ──────────────────────────────────────────────────
+            // A second DynamicsCompressorNode configured as a brick-wall limiter.
+            // Catches any peaks that slip past the compressor (fast envelope attacks,
+            // resonance spikes, LFO→filter interaction) before they hit the DAC.
+            // 20:1 ratio at 0 knee is effectively infinite limiting in practice.
+            const limiter = audioCtx.createDynamicsCompressor();
+            limiter.threshold.value = -3;   // Hard ceiling at -3 dBFS
+            limiter.knee.value      = 0;    // Hard knee — no gradual transition
+            limiter.ratio.value     = 20;   // 20:1 ≈ brick-wall in practice
+            limiter.attack.value    = 0.001; // 1ms — catches fast transients
+            limiter.release.value   = 0.05;  // 50ms — recovers quickly
+
+            Nodes.master_out.connect(compressor);
+            compressor.connect(limiter);
+            limiter.connect(audioCtx.destination);
+
+            Nodes._int_compressor = compressor;
+            Nodes._int_limiter    = limiter;
+
+            Nodes._int_delay    = delayNode;
+            Nodes._int_feedback = feedbackGain;
+            Nodes._int_dry      = dryGain;
+            Nodes._int_wet      = wetGain;
+            updateFXParams();
+
+            updateFilterFreq(Params.filter_cutoff, Params.filter_res);
+
+            // Start scheduler
+            isEngineRunning = true;
+            nextNoteTime = audioCtx.currentTime + 0.1;
+            scheduler();
+
+            if (navigator.requestMIDIAccess) {
+                navigator.requestMIDIAccess().then(onMIDISuccess, () => {});
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // FIX #6: Scheduler uses setTimeout instead of requestAnimationFrame.
+        // setTimeout is more reliable for audio timing, doesn't stall when the
+        // tab is backgrounded (RAF throttles to 1fps in background tabs which
+        // would cause huge timing gaps), and the handle can be cancelled cleanly.
+        // ─────────────────────────────────────────────────────────────────────
+        function scheduler() {
+            if (!isEngineRunning) return;
+            // Look 100ms ahead — enough buffer to prevent gaps, small enough for accuracy
+            while (nextNoteTime < audioCtx.currentTime + 0.1) {
+                playArpStep(nextNoteTime);
+                nextNoteTime += (1.0 / Params.arp_rate);
+            }
+            schedulerTimer = setTimeout(scheduler, 25);
+        }
+
+        function stopScheduler() {
+            isEngineRunning = false;
+            if (schedulerTimer !== null) {
+                clearTimeout(schedulerTimer);
+                schedulerTimer = null;
+            }
+        }
+
+        function playArpStep(time) {
+            if (Params.arp_mode && activeNotes.length === 0) {
+                if (Math.random() < Params.arp_chaos) {
+                    arpStep = Math.floor(Math.random() * generativeScale.length);
+                    const oct = Math.random() < 0.3 ? 2 : 1;
+                    currentGenerativeNote = generativeScale[arpStep] * oct;
+                }
+                Nodes.arp_cv_out.offset.setTargetAtTime(currentGenerativeNote, time, 0.02);
+            } else if (activeNotes.length > 0) {
+                arpStep = (arpStep + 1) % activeNotes.length;
+                Nodes.arp_cv_out.offset.setTargetAtTime(activeNotes[arpStep], time, 0.02);
+            }
+
+            // FIX #5: Gate length is clamped to a ratio of step duration, preventing
+            // envelopes from being triggered every step while still decaying from a
+            // 20-second release that would otherwise overlap all future notes.
+            const stepDur = 1.0 / Params.arp_rate;
+            const gateDur = stepDur * Math.min(Params.arp_gate_len, 0.95);
+
+            triggerLogicalGate('arp_gate_out', time, gateDur);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // JS Gate Dispatcher
+        // ─────────────────────────────────────────────────────────────────────
+        function triggerLogicalGate(sourceJackId, time, duration) {
+            const targets = GateRoutes
+                .filter(route => route.source === sourceJackId)
+                .map(r => r.target);
+
+            targets.forEach(targetId => {
+                if (targetId === 'env_gate_in') {
+                    triggerEnvelope(time, duration);
+                }
+            });
+        }
+
+        function triggerEnvelope(time, duration) {
+            const param = Nodes.env_cv_out.offset;
+            const a = Math.max(parseFloat(Params.env_a), 0.01);
+            const d = Math.max(parseFloat(Params.env_d), 0.01);
+            const s = parseFloat(Params.env_s);
+
+            // Guarantee `time` is always strictly in the future. If setTimeout fires
+            // late and `time` has slipped behind audioCtx.currentTime, calling
+            // cancelAndHoldAtTime with a past timestamp has undefined behaviour
+            // across browsers and can produce a sudden value snap (click).
+            // 5ms is enough margin to stay safely ahead of the audio render clock.
+            const safeTime = Math.max(time, audioCtx.currentTime + 0.005);
+
+            // cancelAndHoldAtTime correctly evaluates the running automation curve
+            // at safeTime and freezes it there — preventing the discontinuity jump
+            // that cancelScheduledValues causes when param.value doesn't reflect
+            // the actual in-flight automation level.
+            if (typeof param.cancelAndHoldAtTime === 'function') {
+                param.cancelAndHoldAtTime(safeTime);
+            } else {
+                param.cancelScheduledValues(safeTime);
+                param.setValueAtTime(param.value, audioCtx.currentTime);
+            }
+
+            // Attack: linearRampToValueAtTime is used instead of setTargetAtTime so
+            // the attack reaches EXACTLY 1.0 at safeTime+a. setTargetAtTime is
+            // asymptotic (1 - e^-4 ≈ 0.982 after 4τ), meaning the decay that follows
+            // would start from ~0.982 rather than 1.0. With linearRamp the subsequent
+            // setTargetAtTime always starts from a clean 1.0 baseline.
+            param.linearRampToValueAtTime(1.0, safeTime + a);
+            // Decay to Sustain
+            param.setTargetAtTime(s, safeTime + a, d / 4);
+            // Release
+            param.setTargetAtTime(0.0001, safeTime + duration, d / 4);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Parameter Mapping & Morphing
+        // ─────────────────────────────────────────────────────────────────────
+
+        // FIX #1: updateOscFreq now targets the ConstantSource offset rather
+        // than the oscillator frequency params directly. Since oscillator base
+        // frequencies are 0, this is the single source of truth for pitch.
+        function updateOscFreq(freq) {
+            Nodes.arp_cv_out.offset.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
+        }
+
+        function updateOscShape(morph) {
+            const t = audioCtx.currentTime;
+            Nodes._int_sawGain.gain.setTargetAtTime(Math.max(0, 1 - morph), t, 0.05);
+            Nodes._int_pulseGain.gain.setTargetAtTime(morph, t, 0.05);
+        }
+
+        function updateFilterFreq(cutoff, res) {
+            const t = audioCtx.currentTime;
+            Nodes._int_flp.frequency.setTargetAtTime(cutoff, t, 0.05);
+            Nodes._int_flp.Q.setTargetAtTime(res, t, 0.05);
+            Nodes._int_fhp.frequency.setTargetAtTime(cutoff, t, 0.05);
+            Nodes._int_fhp.Q.setTargetAtTime(res, t, 0.05);
+        }
+
+        // FIX #14: True equal-power (sine/cosine) SEM morph crossfade.
+        // Linear crossfade loses 3dB at the midpoint (notch position), making it
+        // sound quieter when sweeping through. Cosine crossfade maintains constant
+        // perceived loudness across the full LP → Notch → HP sweep.
+        function updateFilterMorph(morph) {
+            const t = audioCtx.currentTime;
+            const angle = morph * (Math.PI / 2);
+            Nodes._int_flpGain.gain.setTargetAtTime(Math.cos(angle), t, 0.05);
+            Nodes._int_fhpGain.gain.setTargetAtTime(Math.sin(angle), t, 0.05);
+        }
+
+        function updateFXParams() {
+            const t = audioCtx.currentTime;
+            Nodes._int_delay.delayTime.setTargetAtTime(Params.fx_time, t, 0.05);
+            Nodes._int_feedback.gain.setTargetAtTime(Params.fx_feedback, t, 0.05);
+            Nodes._int_dry.gain.setTargetAtTime(1.0 - Params.fx_mix, t, 0.05);
+            Nodes._int_wet.gain.setTargetAtTime(Params.fx_mix, t, 0.05);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // UI Integration (Knobs & Switches) — FIX #7, #8, #12
+        // ─────────────────────────────────────────────────────────────────────
+        document.querySelectorAll('.knob').forEach(knob => {
+            let isDragging = false;
+            let startY = 0;
+            let currentVal = parseFloat(knob.dataset.val);
+            const min    = parseFloat(knob.dataset.min);
+            const max    = parseFloat(knob.dataset.max);
+            const isLog  = knob.dataset.log === "true";
+
+            // FIX #7: Log knobs use logarithmic scale for visual position
+            updateKnobVisual(knob, currentVal, min, max, isLog);
+
+            function onDragStart(clientY) {
+                isDragging = true;
+                startY = clientY;
+            }
+
+            function onDragMove(clientY) {
+                if (!isDragging) return;
+                const delta = startY - clientY;
+                startY = clientY;
+
+                // FIX #8: Log knobs move through log-space for even precision at all
+                // frequencies. At 20Hz a 1px drag makes the same perceptual difference
+                // as a 1px drag at 2000Hz. Linear knobs use a simple linear step.
+                if (isLog) {
+                    const logMin = Math.log(min);
+                    const logMax = Math.log(max);
+                    let logVal = Math.log(currentVal);
+                    logVal = Math.max(logMin, Math.min(logMax,
+                        logVal + delta * (logMax - logMin) * 0.005
+                    ));
+                    currentVal = Math.exp(logVal);
+                } else {
+                    currentVal = Math.max(min, Math.min(max,
+                        currentVal + delta * (max - min) * 0.005
+                    ));
+                }
+
+                updateKnobVisual(knob, currentVal, min, max, isLog);
+                updateEngineParam(knob.dataset.param, currentVal);
+            }
+
+            function onDragEnd() { isDragging = false; }
+
+            // Mouse events
+            knob.addEventListener('mousedown', e => { onDragStart(e.clientY); e.preventDefault(); });
+            window.addEventListener('mousemove', e => { onDragMove(e.clientY); });
+            window.addEventListener('mouseup', onDragEnd);
+
+            // FIX #12: Touch events — map single-finger drag to knob movement
+            knob.addEventListener('touchstart', e => {
+                onDragStart(e.touches[0].clientY);
+                e.preventDefault();
+            }, { passive: false });
+            window.addEventListener('touchmove', e => {
+                if (isDragging) onDragMove(e.touches[0].clientY);
+            }, { passive: false });
+            window.addEventListener('touchend', onDragEnd);
+        });
+
+        document.querySelectorAll('.switch').forEach(sw => {
+            if (sw.dataset.state === "true") sw.classList.add('on');
+            sw.addEventListener('click', () => {
+                const isOn = !sw.classList.contains('on');
+                isOn ? sw.classList.add('on') : sw.classList.remove('on');
+                Params[sw.dataset.param] = isOn;
+            });
+        });
+
+        // FIX #7: updateKnobVisual accepts isLog and computes the rotation in log-space
+        // for frequency/cutoff knobs so the visual position matches auditory perception.
+        function updateKnobVisual(knob, val, min, max, isLog) {
+            const percent = isLog
+                ? Math.log(val / min) / Math.log(max / min)
+                : (val - min) / (max - min);
+            const deg = -135 + (percent * 270);
+            knob.style.transform = `rotate(${deg}deg)`;
+        }
+
+        function updateEngineParam(param, val) {
+            Params[param] = val;
+            if (!isEngineRunning) return;
+
+            const t = audioCtx.currentTime;
+            switch (param) {
+                case 'osc_tune':       updateOscFreq(val); break;
+                case 'osc_shape':      updateOscShape(val); break;
+                // FIX #2: osc_pw now controls detune (cents) on the secondary oscillator
+                // for a subtle chorus/beating effect against the primary triangle wave.
+                case 'osc_pw':         Nodes._int_pulse.detune.setTargetAtTime(val, t, 0.05); break;
+                case 'osc_sub':        Nodes._int_subGain.gain.setTargetAtTime(val, t, 0.05); break;
+                case 'osc_noise':      Nodes._int_noiseGain.gain.setTargetAtTime(val, t, 0.05); break;
+                case 'filter_cutoff':  updateFilterFreq(val, Params.filter_res); break;
+                case 'filter_res':     updateFilterFreq(Params.filter_cutoff, val); break;
+                case 'filter_morph':   updateFilterMorph(val); break;
+                case 'vca_bias':       Nodes._int_vcaCore.gain.setTargetAtTime(val, t, 0.05); break;
+                case 'lfo_rate':       Nodes._int_lfo.frequency.setTargetAtTime(val, t, 0.05); break;
+                case 'master_level':   Nodes.master_out.gain.setTargetAtTime(val, t, 0.05); break;
+                case 'fx_time':
+                case 'fx_feedback':
+                case 'fx_mix':         updateFXParams(); break;
+                // FIX #4: arp_rate, arp_gate_len, arp_chaos are read from Params
+                // directly by the scheduler on each tick — no audio node update needed.
+                case 'arp_rate':
+                case 'arp_gate_len':
+                case 'arp_chaos':
+                    break;
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Physical Patching Matrix — FIX #11, #12
+        // ─────────────────────────────────────────────────────────────────────
+        const svgLayer = document.getElementById('cable-layer');
+        let ghostCable     = null;
+        let dragSourceJack = null;
+
+        function getCenter(element) {
+            const rect = element.getBoundingClientRect();
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        }
+
+        function generatePathD(x1, y1, x2, y2) {
+            const distance = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+            const slack = Math.min(200, distance * 0.4 + 20);
+            return `M ${x1} ${y1} C ${x1} ${y1 + slack}, ${x2} ${y2 + slack}, ${x2} ${y2}`;
+        }
+
+        // FIX #11: Shared cleanup for ghost cable — called on mouseup, touchend,
+        // and window blur so a cable that "escapes" the window is never left dangling.
+        function cancelPatch() {
+            if (!ghostCable) return;
+            svgLayer.removeChild(ghostCable);
+            ghostCable = null;
+            if (dragSourceJack) {
+                dragSourceJack.classList.remove('patch-source');
+                dragSourceJack = null;
+            }
+            document.body.classList.remove('patching');
+        }
+
+        function startPatch(jack, clientX, clientY) {
+            if (document.body.classList.contains('delete-mode')) return;
+            dragSourceJack = jack;
+            const start  = getCenter(jack);
+            const cColor = COLORS[jack.dataset.color] || COLORS.default;
+
+            ghostCable = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            ghostCable.classList.add('cable-visual');
+            ghostCable.style.stroke   = cColor;
+            ghostCable.style.opacity  = '0.5';
+            ghostCable.style.pointerEvents = 'none';
+            ghostCable.setAttribute('d', generatePathD(start.x, start.y, clientX, clientY));
+            svgLayer.appendChild(ghostCable);
+
+            document.body.classList.add('patching');
+            jack.classList.add('patch-source');
+        }
+
+        function movePatch(clientX, clientY) {
+            if (!ghostCable) return;
+            const start = getCenter(dragSourceJack);
+            ghostCable.setAttribute('d', generatePathD(start.x, start.y, clientX, clientY));
+        }
+
+        function endPatch(clientX, clientY) {
+            if (!ghostCable) return;
+            const sourceJack = dragSourceJack;
+            cancelPatch();
+
+            const target = document.elementFromPoint(clientX, clientY);
+            if (target && target.classList.contains('jack') && target !== sourceJack) {
+                createConnection(sourceJack, target);
+            }
+        }
+
+        document.querySelectorAll('.jack').forEach(jack => {
+            // Mouse
+            jack.addEventListener('mousedown', e => {
+                if (e.shiftKey) return;
+                startPatch(jack, e.clientX, e.clientY);
+                e.preventDefault();
+            });
+
+            // FIX #12: Touch — allow dragging cables on mobile/tablet
+            jack.addEventListener('touchstart', e => {
+                if (document.body.classList.contains('delete-mode')) return;
+                const t = e.touches[0];
+                startPatch(jack, t.clientX, t.clientY);
+                e.preventDefault();
+            }, { passive: false });
+        });
+
+        window.addEventListener('mousemove', e => movePatch(e.clientX, e.clientY));
+        window.addEventListener('mouseup',   e => endPatch(e.clientX, e.clientY));
+
+        // FIX #12: Touch move/end for cable dragging
+        window.addEventListener('touchmove', e => {
+            if (ghostCable) {
+                movePatch(e.touches[0].clientX, e.touches[0].clientY);
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchend', e => {
+            if (ghostCable) {
+                const t = e.changedTouches[0];
+                endPatch(t.clientX, t.clientY);
+            }
+        });
+
+        // FIX #11: Clean up ghost cable if the window loses focus mid-drag
+        window.addEventListener('blur', cancelPatch);
+
+        function createConnection(sourceJack, targetJack) {
+            const id    = `cable_${Date.now()}`;
+            const color = COLORS[sourceJack.dataset.color] || COLORS.default;
+
+            const group  = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            group.classList.add('cable-group');
+
+            const hitbox = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            hitbox.classList.add('cable-hitbox');
+
+            const visual = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            visual.classList.add('cable-visual');
+            visual.style.stroke = color;
+
+            group.appendChild(hitbox);
+            group.appendChild(visual);
+            svgLayer.appendChild(group);
+
+            const cableObj = { id, source: sourceJack, target: targetJack, group, hitbox, visual };
+            cables.push(cableObj);
+            updateCables();
+
+            const sId  = sourceJack.dataset.id;
+            const tId  = targetJack.dataset.id;
+            const type = sourceJack.dataset.type;
+
+            if (type === 'gate') {
+                GateRoutes.push({ id, source: sId, target: tId });
+            } else if (isEngineRunning && Nodes[sId] && Nodes[tId]) {
+                try { Nodes[sId].connect(Nodes[tId]); }
+                catch (e) { console.warn('Audio connection rejected natively.'); }
+            }
+
+            hitbox.addEventListener('click', () => {
+                if (document.body.classList.contains('delete-mode')) removeConnection(id);
+            });
+
+            // FIX #12: Touch-tap on hitbox for deletion on mobile
+            hitbox.addEventListener('touchend', e => {
+                if (document.body.classList.contains('delete-mode')) {
+                    removeConnection(id);
+                    e.preventDefault();
+                }
+            });
+        }
+
+        function removeConnection(id) {
+            const idx = cables.findIndex(c => c.id === id);
+            if (idx === -1) return;
+            const c = cables[idx];
+            svgLayer.removeChild(c.group);
+            cables.splice(idx, 1);
+
+            if (c.source.dataset.type === 'gate') {
+                const gIdx = GateRoutes.findIndex(r => r.id === id);
+                if (gIdx > -1) GateRoutes.splice(gIdx, 1);
+            } else if (isEngineRunning && Nodes[c.source.dataset.id] && Nodes[c.target.dataset.id]) {
+                try { Nodes[c.source.dataset.id].disconnect(Nodes[c.target.dataset.id]); }
+                catch (e) {}
+            }
+        }
+
+        function updateCables() {
+            cables.forEach(c => {
+                const start = getCenter(c.source);
+                const end   = getCenter(c.target);
+                const d     = generatePathD(start.x, start.y, end.x, end.y);
+                c.visual.setAttribute('d', d);
+                c.hitbox.setAttribute('d', d);
+            });
+        }
+
+        window.addEventListener('resize', updateCables);
+
+        window.addEventListener('keydown', e => {
+            if (e.key === 'Shift') document.body.classList.add('delete-mode');
+        });
+        window.addEventListener('keyup', e => {
+            if (e.key === 'Shift') document.body.classList.remove('delete-mode');
+        });
+
+        // ─────────────────────────────────────────────────────────────────────
+        // MIDI Integration
+        // ─────────────────────────────────────────────────────────────────────
+        function onMIDISuccess(midiAccess) {
+            document.querySelector('.midi-led').classList.add('active');
+            for (const input of midiAccess.inputs.values()) {
+                input.onmidimessage = getMIDIMessage;
+            }
+        }
+
+        function getMIDIMessage(msg) {
+            const [cmd, note, vel] = msg.data;
+            if (cmd === 144 && vel > 0) {
+                const freq = 440 * Math.pow(2, (note - 69) / 12);
+                if (!activeNotes.includes(freq)) activeNotes.push(freq);
+                activeNotes.sort((a, b) => a - b);
+            } else if (cmd === 128 || (cmd === 144 && vel === 0)) {
+                const freq = 440 * Math.pow(2, (note - 69) / 12);
+                activeNotes = activeNotes.filter(n => Math.abs(n - freq) > 0.1);
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Initialization & Auto-Patch
+        // ─────────────────────────────────────────────────────────────────────
+        document.getElementById('start-engine').addEventListener('click', () => {
+            document.getElementById('overlay').style.display = 'none';
+            initAudio();
+
+            setTimeout(() => {
+                const patch = (sId, tId) => {
+                    const s = document.querySelector(`[data-id="${sId}"]`);
+                    const t = document.querySelector(`[data-id="${tId}"]`);
+                    if (s && t) createConnection(s, t);
+                };
+
+                patch('arp_cv_out',      'osc_cv_in');
+                patch('arp_gate_out',    'env_gate_in');
+                patch('osc_audio_out',   'filter_audio_in');
+                patch('filter_audio_out','vca_audio_in');
+                patch('env_cv_out',      'vca_cv_in');
+                patch('vca_audio_out',   'fx_audio_in');
+                patch('lfo_cv_out',      'filter_cv_in');
+                // FIX #3: Removed the erroneous patch('fx_audio_in', 'master_out').
+                // fx_audio_in is an *input* GainNode that feeds the delay chain;
+                // connecting it to master_out created a second direct signal path
+                // that doubled the dry signal and bypassed the wet/dry blend entirely.
+                // The correct path (fx_audio_in → delay → master_out) is already wired
+                // internally in initAudio() via dryGain and wetGain.
+
+            }, 100);
+        });
+
+    </script>
+</body>
+</html>
